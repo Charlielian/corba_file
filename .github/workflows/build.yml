@@ -1,0 +1,86 @@
+name: Build EXE
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+      - '.gitignore'
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller pyyaml psycopg2-binary
+
+      - name: Build EXE
+        run: |
+          pyinstaller build.spec --clean --noconfirm
+
+      - name: Prepare release assets
+        run: |
+          mkdir release
+          copy dist\unified_parser.exe release\
+          copy conf.yaml release\
+          copy init_tables.sql release\
+          copy README.md release\
+        shell: cmd
+
+      - name: Create ZIP archive
+        run: |
+          cd release && 7z a ..\unified_parser.zip *
+        shell: cmd
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified_parser_exe
+          path: release/
+          retention-days: 30
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          $date = Get-Date -Format "yyyyMMdd"
+          $hash = git rev-parse --short HEAD
+          echo "tag=v2.0.$date-$hash" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Unified Parser ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## 北向文件统一解析器（4G + 5G）
+
+            ### 使用方法
+            1. 下载 `unified_parser.zip` 并解压
+            2. 修改 `conf.yaml` 配置数据库和文件路径
+            3. 执行 `init_tables.sql` 创建日志表
+            4. 运行 `unified_parser.exe`
+
+            ### 命令行参数
+            ```
+            unified_parser.exe              # 同时运行 4G + 5G
+            unified_parser.exe --4g-only    # 只运行 4G
+            unified_parser.exe --5g-only    # 只运行 5G
+            unified_parser.exe --once       # 只跑一轮
+            ```
+          files: unified_parser.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

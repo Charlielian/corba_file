@@ -34,8 +34,24 @@ import multiprocessing
 import concurrent.futures
 import time
 
-# 将脚本所在目录加入 path，确保包导入正常
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+def get_app_root():
+    """
+    获取应用根目录（兼容 PyInstaller 打包）
+    
+    - 开发环境：返回脚本所在目录
+    - PyInstaller --onefile：返回 exe 所在目录
+    - PyInstaller --onedir：返回内层 dist 目录
+    """
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后，sys.executable 指向 exe
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+# 将应用根目录加入 path，确保包导入正常
+APP_ROOT = get_app_root()
+sys.path.insert(0, APP_ROOT)
 
 from config import Config
 from db import ConnectionPoolManager, init_pool
@@ -129,7 +145,7 @@ def main():
     ap.add_argument('--4g-only', action='store_true', help='只运行 4G')
     ap.add_argument('--5g-only', action='store_true', help='只运行 5G')
     ap.add_argument('--once', action='store_true', help='只跑一轮')
-    ap.add_argument('--config', default='conf.yaml', help='配置文件路径')
+    ap.add_argument('--config', default=os.path.join(APP_ROOT, 'conf.yaml'), help='配置文件路径')
     args = ap.parse_args()
 
     run_4g = not args._5g_only
@@ -137,8 +153,8 @@ def main():
 
     config = Config(args.config)
 
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    setup_logger(base_path, config.log_retention_days)
+    # 日志目录放在 exe/脚本所在目录下（而非临时目录）
+    setup_logger(APP_ROOT, config.log_retention_days)
 
     LOGGER.info("=" * 60)
     LOGGER.info("北向文件统一解析器启动 (v2.0 模块化)")
